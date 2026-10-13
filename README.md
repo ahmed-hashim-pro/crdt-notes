@@ -54,7 +54,8 @@ either one offline, edit both, and switch them back.
 npm run fuzz -- hunt --seeds 5000             # the correct CRDT on 5,000 seeds
 npm run fuzz -- mutants --seeds 2000          # the table above
 npm run fuzz -- run --seed 7 --bug arrival-order-tie-break   # replay one
-npx playwright install chromium && npm run e2e   # the two-browser test
+npx playwright install --with-deps chromium   # browser + its system libraries (uses sudo on Linux)
+npm run e2e                                    # the two-browser test
 ```
 
 ## How it is built
