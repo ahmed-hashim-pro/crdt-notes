@@ -182,6 +182,82 @@ describe('causal delivery', () => {
   });
 });
 
+describe('bad ops from elsewhere', () => {
+  /** Everything a rejected op must leave untouched. */
+  const state = (r: Replica) => JSON.stringify([r.snapshot(), r.version(), r.ops().length, r.pending()]);
+
+  it('rejects each malformed shape and changes nothing', () => {
+    const [a, b, n] = pair();
+    a.insertText(n, 0, 'ab');
+    sync(a, b);
+    const base = { id: { c: 50, r: 'a' }, seq: a.ops().length + 1, deps: a.version(), note: n };
+    const bad: unknown[] = [
+      null,
+      { ...base, t: 'set', key: 'title', value: 'x', deps: undefined }, // no deps
+      { ...base, t: 'set', key: 'title', value: 'x', id: undefined },
+      { ...base, t: 'set', key: 'title', value: 'x', seq: 0 },
+      { ...base, t: 'set', key: 'title', value: 'x', id: { c: 50, r: 'a@b' } },
+      { ...base, t: 'set', key: 'title', value: 7 },
+      { ...base, t: 'set', key: 'colour', value: 'red' },
+      { ...base, t: 'create', note: '1@a' }, // a create names itself
+      { ...base, t: 'tag+', tag: '' },
+      { ...base, t: 'tag-', tag: 'x' },
+      { ...base, t: 'ins', after: null },
+      { ...base, t: 'del', targets: [] },
+      { ...base, t: 'move' },
+    ];
+    for (const op of bad) {
+      const before = state(b);
+      expect(() => b.receive(op as Op), JSON.stringify(op)).toThrow(/^rejected op: /);
+      expect(state(b)).toBe(before);
+    }
+    // Still in step with a.
+    a.insertText(n, 2, 'c');
+    sync(a, b);
+    expect(b.text(n)).toBe('abc');
+  });
+
+  it('rejects an op for a note it does not have, without applying it', () => {
+    const [a, b, n] = pair();
+    const before = state(b);
+    const op = { id: { c: 9, r: 'a' }, seq: 3, deps: { a: 2 }, note: '1@z', t: 'set', key: 'title', value: 'x' };
+    expect(() => b.receive(op as Op)).toThrow('rejected op 9@a: unknown note 1@z');
+    expect(state(b)).toBe(before);
+    // The real op with that seq still applies.
+    a.setTitle(n, 'kept');
+    sync(a, b);
+    expect(b.note(n)!.title).toBe('kept');
+  });
+
+  it('rejects inserts and deletes that name characters it does not have', () => {
+    const [, b, n] = pair();
+    const at = { seq: 3, deps: { a: 2 }, note: n };
+    const before = state(b);
+    expect(() => b.receive({ ...at, id: { c: 9, r: 'a' }, t: 'ins', after: '5@q', text: 'x' })).toThrow(
+      'rejected op 9@a: insert after unknown character 5@q',
+    );
+    expect(() => b.receive({ ...at, id: { c: 9, r: 'a' }, t: 'del', targets: ['5@q'] })).toThrow(
+      'rejected op 9@a: delete of unknown character 5@q',
+    );
+    expect(state(b)).toBe(before);
+  });
+
+  it('applies what a bad op was waiting behind, then rejects the bad op', () => {
+    const a = new Replica('a');
+    const b = new Replica('b');
+    const n = a.createNote();
+    const [create] = a.ops();
+    const ghost = { id: { c: 2, r: 'a' }, seq: 2, deps: { a: 1 }, note: '7@z', t: 'tag+', tag: 'x' } as const;
+    expect(b.receive(ghost)).toBe(0);
+    expect(b.pending()).toBe(1);
+    expect(() => b.receive(create)).toThrow('rejected op 2@a: unknown note 7@z');
+    expect(b.pending()).toBe(0);
+    expect(b.version()).toEqual({ a: 1 });
+    expect(b.ops()).toEqual([create]);
+    expect(b.note(n)!.tags).toEqual([]);
+  });
+});
+
 describe('cursor tracking', () => {
   it('a character key finds its new index after a remote insert before it', () => {
     const [a, b, n] = pair();

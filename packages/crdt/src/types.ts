@@ -47,3 +47,40 @@ export function compareIds(a: OpId, b: OpId): number {
   if (a.c !== b.c) return a.c - b.c;
   return a.r < b.r ? -1 : a.r > b.r ? 1 : 0;
 }
+
+const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+const isCount = (x: unknown): x is number => Number.isInteger(x) && (x as number) > 0;
+const isText = (x: unknown): x is string => typeof x === 'string' && x.length > 0;
+const isKeys = (x: unknown): boolean => Array.isArray(x) && x.every(isText);
+
+/**
+ * Why `x` is not a well-formed op, or null if it is. Checks the shape only;
+ * whether the note and characters it names exist is up to the replica.
+ */
+export function opProblem(x: unknown): string | null {
+  if (!isObject(x)) return 'not an object';
+  const { id, seq, deps, note } = x;
+  if (!isObject(id) || !isCount(id.c)) return 'bad id';
+  if (!isText(id.r) || id.r.length > 64 || id.r.includes('@')) return 'bad replica id';
+  if (!isCount(seq)) return 'bad seq';
+  if (!isObject(deps) || !Object.values(deps).every((n) => Number.isInteger(n) && (n as number) >= 0)) return 'bad deps';
+  if (!isText(note)) return 'bad note';
+  switch (x.t) {
+    case 'create':
+      return note === key(id as unknown as OpId) ? null : 'a create must name itself as the note';
+    case 'set':
+      if (x.key === 'title') return typeof x.value === 'string' ? null : 'title must be a string';
+      if (x.key === 'deleted') return typeof x.value === 'boolean' ? null : 'deleted must be a boolean';
+      return 'bad key';
+    case 'tag+':
+      return isText(x.tag) ? null : 'bad tag';
+    case 'tag-':
+      return isText(x.tag) && isKeys(x.removes) ? null : 'bad tag removal';
+    case 'ins':
+      return (x.after === null || isText(x.after)) && isText(x.text) ? null : 'bad insert';
+    case 'del':
+      return isKeys(x.targets) && (x.targets as unknown[]).length > 0 ? null : 'bad delete';
+    default:
+      return 'unknown op type';
+  }
+}

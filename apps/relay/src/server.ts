@@ -51,15 +51,27 @@ const TYPES: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 };
 
+const str = (x: unknown) => typeof x === 'string' && x.length > 0;
+const strs = (x: unknown) => Array.isArray(x) && x.every(str);
+
+// The relay doesn't judge edits, but it won't pass on an op that isn't one:
+// a malformed op would make every replica that receives it throw. This is
+// the same shape check the replicas make (opProblem in packages/crdt).
 function isOp(x: unknown): x is WireOp {
-  const o = x as WireOp;
-  return (
-    typeof o === 'object' && o !== null &&
-    typeof o.id === 'object' && o.id !== null &&
-    Number.isInteger(o.id.c) && o.id.c > 0 &&
-    typeof o.id.r === 'string' && o.id.r.length > 0 && o.id.r.length <= 64 &&
-    Number.isInteger(o.seq) && o.seq > 0
-  );
+  const o = x as WireOp & Record<string, any>;
+  if (typeof o !== 'object' || o === null || typeof o.id !== 'object' || o.id === null) return false;
+  if (!Number.isInteger(o.id.c) || o.id.c <= 0 || !Number.isInteger(o.seq) || o.seq <= 0) return false;
+  if (!str(o.id.r) || o.id.r.length > 64 || o.id.r.includes('@') || !str(o.note)) return false;
+  if (!isVV(o.deps) || Array.isArray(o.deps)) return false;
+  switch (o.t) {
+    case 'create': return o.note === `${o.id.c}@${o.id.r}`;
+    case 'set': return (o.key === 'title' && typeof o.value === 'string') || (o.key === 'deleted' && typeof o.value === 'boolean');
+    case 'tag+': return str(o.tag);
+    case 'tag-': return str(o.tag) && strs(o.removes);
+    case 'ins': return (o.after === null || str(o.after)) && str(o.text);
+    case 'del': return strs(o.targets) && o.targets.length > 0;
+    default: return false;
+  }
 }
 
 function isVV(x: unknown): x is VersionVector {

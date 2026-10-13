@@ -39,6 +39,13 @@ export class NotesStore {
   }
 
   receive(ops: Op[]): void {
-    for (const op of ops) this.replica.receive(op);
+    for (const op of ops) {
+      try {
+        this.replica.receive(op);
+      } catch (e) {
+        // The replica refused a bad op and is unchanged; keep the rest.
+        console.warn((e as Error).message);
+      }
+    }
   }
 }

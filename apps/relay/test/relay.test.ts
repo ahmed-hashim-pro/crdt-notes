@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { startRelay, type Relay } from '../src/server.ts';
 
-const op = (r: string, seq: number, extra: object = {}) => ({ id: { c: seq, r }, seq, deps: {}, note: '1@a', t: 'create', ...extra });
+const op = (r: string, seq: number, extra: object = {}) => ({ id: { c: seq, r }, seq, deps: {}, note: `${seq}@${r}`, t: 'create', ...extra });
 
 let relay: Relay | undefined;
 afterEach(async () => {
@@ -95,6 +95,39 @@ describe('relay', () => {
     c.send({ type: 'hello', have: {} });
     await c.until(() => c.got.some((m) => m.type === 'welcome'));
     c.ws.close();
+  });
+
+  it('refuses malformed ops instead of passing them on', async () => {
+    relay = await startRelay({ port: 0 });
+    const b = await client(relay.port);
+    b.send({ type: 'hello', have: {} });
+    await b.until(() => b.got.some((m) => m.type === 'welcome'));
+    const set = { t: 'set', note: '1@a', key: 'title', value: 'x' };
+    const bad = [
+      op('a', 1, { deps: undefined }),
+      op('a', 1, { deps: [1] }),
+      op('a', 1, { note: '1@z' }), // a create names itself
+      op('a', 1, { note: undefined, t: 'tag+', tag: 'x' }),
+      op('a', 1, { id: { c: 1, r: 'a@b' } }),
+      op('a', 1, { ...set, value: 7 }),
+      op('a', 1, { ...set, key: 'colour' }),
+      op('a', 1, { t: 'tag+', note: '1@a', tag: '' }),
+      op('a', 1, { t: 'tag-', note: '1@a', tag: 'x' }),
+      op('a', 1, { t: 'ins', note: '1@a', after: null }),
+      op('a', 1, { t: 'ins', note: '1@a', after: 3, text: 'x' }),
+      op('a', 1, { t: 'del', note: '1@a', targets: [] }),
+      op('a', 1, { t: 'move' }),
+    ];
+    for (const o of bad) {
+      const a = await client(relay.port);
+      const closed = new Promise<number>((ok) => a.ws.on('close', ok));
+      a.send({ type: 'ops', ops: [op('a', 2), o] });
+      expect(await closed, JSON.stringify(o)).toBe(1003);
+    }
+    // None stored or forwarded, not even the good op sent alongside.
+    expect(relay.ops()).toEqual([]);
+    expect(b.got.filter((m) => m.type === 'ops' && m.ops.length > 0)).toEqual([]);
+    b.ws.close();
   });
 
   it('serves the app, falls back to index.html, and refuses to leave its directory', async () => {

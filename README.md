@@ -97,6 +97,10 @@ greater than that of anything it could have known about.
   has arrived. An insert never arrives before the character it follows, and
   a delete never arrives before what it deletes. Duplicates are recognised
   by (replica, sequence number) and ignored.
+- **Bad ops are refused whole.** A malformed op, or one that names a note or
+  character that still isn't there once its dependencies are, is rejected
+  before it touches anything: the log, the version vector and the notes are
+  as if it never arrived.
 
 There's no merge function to get wrong: a replica's state is just its ops,
 applied in causal order. Reloading the page replays the op log from
@@ -105,7 +109,9 @@ IndexedDB.
 ### The relay
 
 The relay stores ops and forwards them. It has no authority:
-- It doesn't merge, order or reject anything.
+- It doesn't merge, order or reject any edit. It only refuses a message
+  whose ops aren't well-formed, by closing the socket, so a broken client
+  can't send other replicas something they would have to throw on.
 - It doesn't have to stay up.
 - It can lose its data without losing an edit, as long as some replica
   still holds it.
@@ -171,7 +177,7 @@ survives 200 seeds.
 
 `npm test`:
 
-- **CRDT (16 tests).**
+- **CRDT (20 tests).**
   - Local edits behave like a string, surrogate pairs included.
   - Concurrent inserts at one spot, concurrent typed runs (no interleaving),
     an insert next to a concurrent delete, and title races.
@@ -179,6 +185,8 @@ survives 200 seeds.
   - Causal buffering, including dependencies through a third replica.
   - Duplicates are ignored.
   - Rebuilding from the op log, as after a reload.
+  - Malformed ops, and ops naming a note or character the replica doesn't
+    have, are rejected and leave its state unchanged.
   - Cursor tracking.
   - One test pins a known limitation (below).
 - **Fuzzer (10 tests).**
@@ -188,12 +196,13 @@ survives 200 seeds.
     2,000 dropped and 1,000 duplicated, and 50 partitions.
   - Profiles vary.
   - Each of the six bugs is caught.
-- **Relay (6 tests).**
+- **Relay (7 tests).**
   - It forwards to others but not back to the sender.
   - A newcomer gets exactly what it lacks.
   - Each op is stored once.
   - A restart reloads from the data file and skips a torn last line.
   - Garbage closes the socket instead of crashing the relay.
+  - Malformed ops are neither stored nor forwarded.
   - The app is served, with an index.html fallback and no path traversal.
 
 `npm run e2e` (2 tests) runs the real app in two browser contexts against

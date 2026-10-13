@@ -1,4 +1,4 @@
-import { compareIds, key, type MetaKey, type Op, type OpId, type ReplicaId, type VersionVector } from './types.js';
+import { compareIds, key, opProblem, type MetaKey, type Op, type OpId, type ReplicaId, type VersionVector } from './types.js';
 
 /**
  * Deliberate mistakes, each a known way to build a CRDT that does not
@@ -234,30 +234,63 @@ export class Replica {
    * Takes an op from elsewhere. It is applied once everything it depends on
    * has been; until then it waits. Duplicates are ignored. Returns how many
    * ops were applied as a result (it may release others that were waiting).
+   *
+   * A malformed op throws at once and changes nothing. An op that names a
+   * note or character that still isn't here once its dependencies are is
+   * dropped unapplied, and receive throws after applying everything else it
+   * released. Either way the replica's state is as if the op never came.
    */
   receive(op: Op): number {
+    const problem = opProblem(op);
+    if (problem) throw new Error(`rejected op: ${problem}`);
     const dup = op.seq <= (this.vv[op.id.r] ?? 0);
     if (dup && !this.bugs.acceptDuplicates) return 0;
     if (this.bugs.noCausalBuffer || dup) {
+      const why = this.refusal(op);
+      if (why) throw new Error(`rejected op ${key(op.id)}: ${why}`);
       this.apply(op, false);
       return 1;
     }
     if (this.buffer.some((b) => b.id.r === op.id.r && b.seq === op.seq)) return 0;
     this.buffer.push(op);
     let applied = 0;
+    const rejected: string[] = [];
     for (let progress = true; progress; ) {
       progress = false;
       for (let i = 0; i < this.buffer.length; i++) {
         if (this.ready(this.buffer[i])) {
           const [next] = this.buffer.splice(i, 1);
-          this.apply(next, false);
-          applied++;
+          const why = this.refusal(next);
+          if (why) rejected.push(`${key(next.id)}: ${why}`);
+          else {
+            this.apply(next, false);
+            applied++;
+          }
           progress = true;
           break;
         }
       }
     }
+    if (rejected.length) throw new Error(`rejected op ${rejected.join('; ')}`);
     return applied;
+  }
+
+  /**
+   * Why an op whose dependencies have all been applied still can't be: it
+   * names a note or character that isn't here. A correct replica never sends
+   * one. Some of the deliberate bugs tolerate these, as they always have.
+   */
+  private refusal(op: Op): string | null {
+    const n = this.notes.get(op.note);
+    if (op.t === 'create') return null;
+    if (!n) return this.bugs.noCausalBuffer ? null : `unknown note ${op.note}`;
+    if (this.bugs.noCausalBuffer || this.bugs.forgetTombstones) return null;
+    if (op.t === 'ins' && op.after !== null && !n.byKey.has(op.after)) return `insert after unknown character ${op.after}`;
+    if (op.t === 'del') {
+      const k = op.targets.find((t) => !n.byKey.has(t));
+      if (k !== undefined) return `delete of unknown character ${k}`;
+    }
+    return null;
   }
 
   private ready(op: Op): boolean {
@@ -293,11 +326,9 @@ export class Replica {
     this.vv[op.id.r] = Math.max(this.vv[op.id.r] ?? 0, op.seq);
     this.log.push(op);
 
+    // Remote ops have passed refusal() by now, so what they name is here.
     let n = this.notes.get(op.note);
     if (!n) {
-      if (op.t !== 'create' && !this.bugs.noCausalBuffer) {
-        throw new Error(`op ${key(op.id)} for unknown note ${op.note}: causal delivery broken`);
-      }
       n = new NoteState(op.note);
       this.notes.set(op.note, n);
     }
@@ -331,10 +362,7 @@ export class Replica {
       case 'del':
         for (const k of op.targets) {
           const e = n.byKey.get(k);
-          if (!e) {
-            if (this.bugs.noCausalBuffer || this.bugs.forgetTombstones) continue;
-            throw new Error(`delete of unknown character ${k}: causal delivery broken`);
-          }
+          if (!e) continue; // only under noCausalBuffer or forgetTombstones
           if (this.bugs.forgetTombstones) {
             n.seq.splice(n.seq.indexOf(e), 1);
             n.byKey.delete(k);
@@ -372,10 +400,9 @@ export class Replica {
       } else {
         const a = n.byKey.get(anchor);
         if (!a) {
-          if (!this.bugs.noCausalBuffer && !this.bugs.forgetTombstones) {
-            throw new Error(`insert after unknown character ${anchor}: causal delivery broken`);
-          }
-          i = n.seq.length; // the anchor is gone or not here yet: guess the end
+          // Only under noCausalBuffer or forgetTombstones: the anchor is gone
+          // or not here yet, so guess the end.
+          i = n.seq.length;
         } else {
           i = n.seq.indexOf(a) + 1;
         }
