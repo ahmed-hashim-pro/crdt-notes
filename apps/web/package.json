@@ -1,0 +1,25 @@
+{
+  "name": "@crdt-notes/web",
+  "version": "0.1.0",
+  "scripts": {
+    "start": "ng serve",
+    "build": "ng build",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit"
+  },
+  "private": true,
+  "dependencies": {
+    "@angular/common": "22.2.2",
+    "@angular/compiler": "22.2.2",
+    "@angular/core": "22.2.2",
+    "@angular/platform-browser": "22.2.2",
+    "@crdt-notes/crdt": "0.1.0",
+    "rxjs": "7.8.2",
+    "tslib": "2.8.1"
+  },
+  "devDependencies": {
+    "@angular/build": "22.2.2",
+    "@angular/cli": "22.2.2",
+    "@angular/compiler-cli": "22.2.2"
+  },
+  "license": "MIT"
+}

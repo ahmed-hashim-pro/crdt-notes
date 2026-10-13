@@ -1,0 +1,14 @@
+:root {
+  --line: #d0d7de;
+  --muted: #57606a;
+  --paper: #ffffff;
+  --accent-bg: #ddf4ff;
+  color-scheme: light dark;
+  font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  color: #24292f;
+  background: #f6f8fa;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --line: #30363d; --muted: #8b949e; --paper: #0d1117; --accent-bg: #1f3a5f; color: #e6edf3; background: #161b22; }
+}
+body { margin: 0; }

@@ -1,0 +1,28 @@
+{
+  "name": "crdt-notes",
+  "private": true,
+  "license": "MIT",
+  "workspaces": [
+    "packages/crdt",
+    "apps/relay",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=22.22"
+  },
+  "scripts": {
+    "test": "npm test -w packages/crdt && npm test -w apps/relay",
+    "typecheck": "npm run typecheck -w packages/crdt && npm run typecheck -w apps/relay && npm run build -w packages/crdt && npm run typecheck -w apps/web",
+    "fuzz": "npm run fuzz -w packages/crdt --",
+    "build": "npm run build -w packages/crdt && npm run build -w apps/web",
+    "start": "node apps/relay/src/server.ts",
+    "e2e": "playwright test -c e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@types/node": "22.19.1",
+    "@types/ws": "8.18.1",
+    "typescript": "6.0.3",
+    "vitest": "5.0.4"
+  }
+}

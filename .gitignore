@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.angular/
+e2e/frames/
+e2e/test-results/
+e2e/playwright-report/
+test-results/
+apps/relay/relay-data.jsonl

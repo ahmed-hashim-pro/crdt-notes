@@ -1,0 +1,21 @@
+{
+  "name": "@crdt-notes/crdt",
+  "version": "0.1.0",
+  "description": "A sequence CRDT (RGA) and LWW/OR-set note metadata with causal delivery, written from scratch, plus a convergence fuzzer",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "fuzz": "npm run build --silent && node dist/cli.js"
+  }
+}
