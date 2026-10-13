@@ -234,8 +234,9 @@ CI runs:
   could end-to-end encrypt ops, since the relay never needs to read them.
 - **One op per character element.** Fine for notes; a book-length document
   would want run-length-encoded elements.
-- **The fuzzer is evidence, not proof.** It ran about 20,000 hostile schedules
-  for this README, and the mutants show it would catch these six mistakes. It
+- **The fuzzer is evidence, not proof.** The two fuzz commands above run the
+  correct CRDT on 7,000 hostile schedules (5,000 in `hunt`, 2,000 in
+  `mutants`), and the mutants show it would catch these six mistakes. It
   doesn't prove convergence the way a mechanised proof of RGA does.
 
 ## License
